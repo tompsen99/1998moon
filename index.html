@@ -20,13 +20,12 @@
             font-family: 'Noto Sans SC', sans-serif;
             background: var(--bg-gradient);
             height: 100vh;
-            height: 100svh; /* 适配移动端浏览器工具栏 */
+            height: 100svh;
             display: flex;
             flex-direction: column;
             overflow: hidden;
         }
 
-        /* 顶部导航自适应 */
         header {
             background: white;
             padding: 10px 20px;
@@ -48,7 +47,7 @@
             min-width: 200px;
         }
 
-        .header-btns { display: flex; gap: 8px; }
+        .header-btns { display: flex; gap: 8px; flex-wrap: wrap; }
         .header-btns button {
             padding: 8px 12px;
             border-radius: 8px;
@@ -56,9 +55,12 @@
             background: white;
             cursor: pointer;
             font-size: 14px;
+            transition: all 0.2s;
         }
+        .header-btns button:hover { background: #f1f5f9; }
+        /* 按钮未激活时的样式 */
+        .btn-inactive { opacity: 0.5; background: #e2e8f0 !important; }
 
-        /* 响应式主容器 */
         .main-container {
             display: flex;
             flex: 1;
@@ -68,7 +70,6 @@
             position: relative;
         }
 
-        /* 可隐藏的侧边栏 */
         .sidebar {
             width: 340px;
             background: white;
@@ -88,7 +89,6 @@
             pointer-events: none;
         }
 
-        /* 图表展示区 */
         .chart-area {
             flex: 1;
             background: white;
@@ -98,10 +98,9 @@
             display: flex;
             flex-direction: column;
             position: relative;
-            min-width: 0; /* 防止Canvas撑破布局 */
+            min-width: 0; 
         }
 
-        /* 浮动控制工具栏 */
         .chart-tools {
             position: absolute;
             right: 24px;
@@ -137,6 +136,7 @@
             background: #f8fafc;
             padding: 10px;
             border-radius: 12px;
+            transition: all 0.3s;
         }
 
         canvas { 
@@ -146,7 +146,6 @@
             touch-action: none;
         }
 
-        /* 侧边栏项样式优化 */
         .data-item {
             display: flex;
             align-items: center;
@@ -159,7 +158,6 @@
         .value-controls { display: flex; align-items: center; gap: 4px; }
         .value-btn { width: 32px; height: 32px; border-radius: 6px; border: none; cursor: pointer; color: white; }
 
-        /* 移动端适配 */
         @media (max-width: 768px) {
             .main-container { flex-direction: column; }
             .sidebar { width: 100%; height: 200px; }
@@ -183,6 +181,8 @@
     <input id="custom-title" type="text" value="平均数实验课件" class="title-input">
     <div class="header-btns">
         <button onclick="toggleSidebar()" id="toggle-btn">📂 编辑区</button>
+        <button onclick="toggleStats()" id="toggle-stats-btn" class="btn-inactive">👁️ 统计面板</button>
+        <button onclick="toggleAvgLine()" id="toggle-line-btn" class="btn-inactive">👁️ 平均线</button>
         <button onclick="undoLast()">↩️ 撤销</button>
         <button onclick="resetCurrent()">🔄 重置</button>
     </div>
@@ -192,14 +192,14 @@
     <div class="sidebar" id="sidebar">
         <h3 style="margin-bottom:12px">数据管理</h3>
         <div id="data-list"></div>
-        <button onclick="addStudent()" style="width:100%; padding:12px; margin-top:10px; background:var(--success); color:white; border:none; border-radius:10px; cursor:pointer">➕ 新增成员</button>
+        <button onclick="addStudent()" style="width:100%; padding:12px; margin-top:10px; background:var(--success); color:white; border:none; border-radius:10px; cursor:pointer">➕ 新增数据</button>
     </div>
 
     <div class="chart-area" id="chart-panel">
-        <div class="stat-row">
+        <div class="stat-row" id="stat-row" style="display: none;">
             <span>总和: <span id="total" style="color:var(--primary)">0</span></span>
             <span>人数: <span id="count" style="color:var(--primary)">0</span></span>
-            <span>平均: <span id="avg" style="color:var(--danger)">0</span></span>
+            <span>平均数: <span id="avg" style="color:var(--danger)">0</span></span>
         </div>
 
         <div class="chart-tools">
@@ -215,33 +215,39 @@
 </div>
 
 <script>
-    let students = [
-        {id:1, name:"杨羽", color:"#3b82f6", blocks: Array(6).fill("#3b82f6")},
-        {id:2, name:"曾诗涵", color:"#ec4899", blocks: Array(8).fill("#ec4899")},
-        {id:3, name:"李婷", color:"#8b5cf6", blocks: Array(5).fill("#8b5cf6")},
-        {id:4, name:"张伟", color:"#14b8a6", blocks: Array(10).fill("#14b8a6")},
-        {id:5, name:"王芳", color:"#f59e0b", blocks: Array(6).fill("#f59e0b")}
+    let defaultStudents = [
+        {id:1, name:"第一次", color:"#ef4444", blocks: Array(6).fill("#ef4444")},
+        {id:2, name:"第二次", color:"#3b82f6", blocks: Array(8).fill("#3b82f6")},
+        {id:3, name:"第三次", color:"#22c55e", blocks: Array(5).fill("#22c55e")},
+        {id:4, name:"第四次", color:"#ec4899", blocks: Array(10).fill("#ec4899")},
+        {id:5, name:"第五次", color:"#f59e0b", blocks: Array(6).fill("#f59e0b")}
     ];
+    let students = JSON.parse(JSON.stringify(defaultStudents));
 
     let history = [];
     let canvas, ctx, chartPanel;
     let isDragging = false;
     let dragged = null;
     let mousePos = { x: 0, y: 0 };
-    let zoomScale = 1.0; // 缩放比例
+    let zoomScale = 1.0; 
+    
+    // ==========================================
+    // 修改点：把这里的 true 改成 false，让它们默认隐藏
+    // ==========================================
+    let showStatsPanel = false;
+    let showAverageLine = false;
 
     function init() {
         canvas = document.getElementById('canvas');
         ctx = canvas.getContext('2d');
         chartPanel = document.getElementById('chart-panel');
 
-        // 使用 ResizeObserver 监听容器大小变化，真正实现自适应
         const ro = new ResizeObserver(entries => {
             for (let entry of entries) {
                 const { width, height } = entry.contentRect;
-                // 设置画布像素大小为容器大小
                 canvas.width = width;
-                canvas.height = height - 80; // 减去统计栏高度
+                const statHeight = showStatsPanel ? document.getElementById('stat-row').offsetHeight + 12 : 0;
+                canvas.height = height - statHeight - 20; 
                 draw();
             }
         });
@@ -259,56 +265,63 @@
         saveHistory();
     }
 
-    // --- 功能函数 ---
+    function toggleStats() {
+        showStatsPanel = !showStatsPanel;
+        const statRow = document.getElementById('stat-row');
+        const btn = document.getElementById('toggle-stats-btn');
+        statRow.style.display = showStatsPanel ? 'flex' : 'none';
+        btn.classList.toggle('btn-inactive', !showStatsPanel);
+        setTimeout(() => { window.dispatchEvent(new Event('resize')); }, 50);
+    }
+
+    function toggleAvgLine() {
+        showAverageLine = !showAverageLine;
+        const btn = document.getElementById('toggle-line-btn');
+        btn.classList.toggle('btn-inactive', !showAverageLine);
+        draw();
+    }
+
     function toggleSidebar() {
         const sb = document.getElementById('sidebar');
         const btn = document.getElementById('toggle-btn');
         sb.classList.toggle('hidden');
-        btn.textContent = sb.classList.contains('hidden') ? "📂 显示编辑区" : "📁 隐藏编辑区";
+        btn.classList.toggle('btn-inactive', sb.classList.contains('hidden'));
     }
 
-    function adjustZoom(delta) {
-        zoomScale = Math.min(Math.max(0.5, zoomScale + delta), 2.0);
-        draw();
-    }
-
+    function adjustZoom(delta) { zoomScale = Math.min(Math.max(0.5, zoomScale + delta), 2.0); draw(); }
     function resetZoom() { zoomScale = 1.0; draw(); }
-
     function toggleFullScreen() {
-        if (!document.fullscreenElement) {
-            chartPanel.requestFullscreen();
-        } else {
-            document.exitFullscreen();
-        }
+        if (!document.fullscreenElement) chartPanel.requestFullscreen();
+        else document.exitFullscreen();
     }
 
-    // --- 核心绘图逻辑 ---
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (students.length === 0) return;
 
-        // 计算基础布局（受 zoomScale 影响）
         const padding = { left: 60, right: 60, top: 40, bottom: 60 };
         const chartW = canvas.width - padding.left - padding.right;
         const chartH = canvas.height - padding.top - padding.bottom;
         
         const maxVal = Math.max(12, ...students.map(s => s.blocks.length + 2));
-        // 核心：单位高度根据缩放比例调整
         const unitH = (chartH / maxVal) * zoomScale;
         const baseY = canvas.height - padding.bottom;
 
-        // 绘制坐标轴
         ctx.strokeStyle = '#e2e8f0';
         ctx.lineWidth = 1;
         ctx.textAlign = 'right';
         ctx.font = `${14 * zoomScale}px sans-serif`;
-        for(let i=0; i<=maxVal; i+=2) {
+        
+        for(let i=0; i<=maxVal; i++) {
             let y = baseY - i * unitH;
-            ctx.beginPath(); ctx.moveTo(padding.left, y); ctx.lineTo(canvas.width - padding.right, y); ctx.stroke();
+            ctx.beginPath(); 
+            ctx.moveTo(padding.left, y); 
+            ctx.lineTo(canvas.width - padding.right, y); 
+            ctx.stroke();
+            ctx.fillStyle = '#64748b';
             ctx.fillText(i, padding.left - 10, y + 5);
         }
 
-        // 绘制柱状图
         const barW = Math.min(60 * zoomScale, (chartW / students.length) * 0.6);
         const spacing = (chartW - (students.length * barW)) / (students.length + 1);
 
@@ -317,30 +330,29 @@
             
             s.blocks.forEach((color, j) => {
                 if (isDragging && dragged && dragged.sIdx === i && dragged.bIdx === j) return;
-                
                 const y = baseY - (j + 1) * unitH;
                 drawRect(x, y + 2, barW, unitH - 4, color);
             });
 
-            // 绘制姓名（自适应字体大小）
             ctx.fillStyle = '#334155';
             ctx.font = `bold ${Math.max(12, 16 * zoomScale)}px Noto Sans SC`;
             ctx.textAlign = 'center';
             ctx.fillText(s.name, x + barW/2, baseY + 30);
         });
 
-        // 平均线
-        const avg = students.reduce((a,b)=>a+b.blocks.length,0) / students.length;
-        const avgY = baseY - avg * unitH;
-        ctx.setLineDash([5, 5]);
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(padding.left, avgY); ctx.lineTo(canvas.width-padding.right, avgY); ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = '#ef4444';
-        ctx.fillText(`平均:${avg.toFixed(1)}`, canvas.width - 30, avgY - 10);
+        if (showAverageLine) {
+            const avg = students.reduce((a,b)=>a+b.blocks.length,0) / students.length;
+            const avgY = baseY - avg * unitH;
+            ctx.setLineDash([5, 5]);
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(padding.left, avgY); ctx.lineTo(canvas.width-padding.right, avgY); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#ef4444';
+            ctx.textAlign = 'left';
+            ctx.fillText(`平均数:${avg.toFixed(1)}`, canvas.width - padding.right + 10, avgY + 5);
+        }
 
-        // 绘制拖拽物
         if (isDragging && dragged) {
             drawRect(mousePos.x - barW/2, mousePos.y - unitH/2, barW, unitH-4, dragged.color, true);
         }
@@ -351,11 +363,10 @@
         if(shadow) { ctx.shadowBlur=10; ctx.shadowColor='rgba(0,0,0,0.3)'; }
         ctx.fillRect(x, y, w, h);
         ctx.shadowBlur=0;
-        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
         ctx.strokeRect(x+1, y+1, w-2, h-2);
     }
 
-    // --- 交互逻辑适配 ---
     function getPos(e) {
         const rect = canvas.getBoundingClientRect();
         return {
@@ -385,11 +396,7 @@
         });
     }
 
-    function onMouseMove(e) {
-        if (!isDragging) return;
-        mousePos = getPos(e);
-        draw();
-    }
+    function onMouseMove(e) { if (!isDragging) return; mousePos = getPos(e); draw(); }
 
     function onMouseUp(e) {
         if (!isDragging) return;
@@ -409,9 +416,7 @@
                 }
             }
         });
-
-        isDragging = false; dragged = null;
-        updateStats(); renderSidebar(); draw();
+        isDragging = false; dragged = null; updateStats(); renderSidebar(); draw();
     }
 
     function onTouch(e) {
@@ -421,7 +426,6 @@
         }
     }
 
-    // --- 数据同步 ---
     function updateStats() {
         const sum = students.reduce((a, s) => a + s.blocks.length, 0);
         const avg = students.length ? (sum / students.length).toFixed(1) : 0;
@@ -429,7 +433,6 @@
         document.getElementById('count').textContent = students.length;
         document.getElementById('avg').textContent = avg;
         
-        // 检查平齐
         const balanced = students.length > 0 && students.every(s => s.blocks.length === parseFloat(avg));
         document.getElementById('success-msg').style.opacity = balanced ? 1 : 0;
     }
@@ -438,14 +441,14 @@
         const list = document.getElementById('data-list');
         list.innerHTML = students.map((s, i) => `
             <div class="data-item">
-                <div style="width:12px;height:12px;border-radius:50%;background:${s.color}"></div>
-                <input type="text" value="${s.name}" style="width:60px;border:none;background:transparent" onchange="students[${i}].name=this.value;draw()">
+                <div style="width:16px;height:16px;border-radius:50%;background:${s.color}"></div>
+                <input type="text" value="${s.name}" style="flex:1;border:none;background:transparent;font-size:16px;" onchange="students[${i}].name=this.value;draw()">
                 <div class="value-controls">
                     <button class="value-btn" style="background:var(--danger)" onclick="changeVal(${i},-1)">-</button>
                     <span style="width:25px;text-align:center;font-weight:bold">${s.blocks.length}</span>
                     <button class="value-btn" style="background:var(--success)" onclick="changeVal(${i},1)">+</button>
                 </div>
-                <button onclick="removeStudent(${i})" style="border:none;background:none;cursor:pointer">🗑️</button>
+                <button onclick="removeStudent(${i})" style="border:none;background:none;cursor:pointer;font-size:18px">🗑️</button>
             </div>
         `).join('');
     }
@@ -459,8 +462,10 @@
 
     function addStudent() {
         saveHistory();
-        const c = ["#3b82f6","#ec4899","#8b5cf6","#14b8a6","#f59e0b"][students.length % 5];
-        students.push({id:Date.now(), name:"同学"+(students.length+1), color:c, blocks:Array(5).fill(c)});
+        const colors = ["#ef4444","#3b82f6","#22c55e","#ec4899","#f59e0b"]; 
+        const c = colors[students.length % 5];
+        const num = ["一","二","三","四","五","六","七","八","九","十"][students.length] || (students.length + 1);
+        students.push({id:Date.now(), name:"第"+num+"次", color:c, blocks:Array(5).fill(c)});
         updateStats(); renderSidebar(); draw();
     }
 
@@ -483,7 +488,16 @@
         updateStats(); renderSidebar(); draw();
     }
 
-    function resetCurrent() { if(confirm("确定重置？")) location.reload(); }
+    function resetCurrent() { 
+        if(confirm("确定重置为初始数据吗？")) {
+            students = JSON.parse(JSON.stringify(defaultStudents));
+            history = [];
+            saveHistory();
+            updateStats();
+            renderSidebar();
+            draw();
+        } 
+    }
 
     window.onload = init;
 </script>
